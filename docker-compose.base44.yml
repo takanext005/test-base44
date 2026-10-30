@@ -1,0 +1,78 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: on-failure
+    environment:
+      - POSTGRES_USER=starter
+      - POSTGRES_PASSWORD=starter_dev_password
+      - POSTGRES_DB=starter
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U starter -d starter"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    labels:
+      base44.project: "Database"
+      base44.kind: infra
+
+  api:
+    image: node:22-alpine
+    restart: on-failure
+    working_dir: /app
+    command: ["sh", "-ec", "npm install --no-audit --no-fund && exec npm run dev"]
+    environment:
+      - DATABASE_URL=postgres://starter:starter_dev_password@db:5432/starter
+      - PORT=4000
+      - CHOKIDAR_USEPOLLING=true
+    volumes:
+      - ./api:/app
+      - api_node_modules:/app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:4000/api/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    labels:
+      base44.project: "API"
+      base44.kind: api
+
+  web:
+    image: node:22-alpine
+    restart: on-failure
+    working_dir: /app
+    command: ["sh", "-ec", "npm install --no-audit --no-fund && exec npm run dev"]
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - BASE44_PREVIEW_MODE
+      # Passed through from the sandbox so Vite accepts the preview proxy's Host header.
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+    volumes:
+      - ./frontend:/app
+      - web_node_modules:/app/node_modules
+    ports:
+      - "3000:5173"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:5173/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      base44.project: "Web"
+      base44.kind: web
+      base44.port: "3000"
+
+volumes:
+  db_data:
+  api_node_modules:
+  web_node_modules:
